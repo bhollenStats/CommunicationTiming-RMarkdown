@@ -1,6 +1,6 @@
 ---
 title: "CommunicationTiming"
-author: "hollen"
+author: "bhollenStats"
 date: "February 22, 2018"
 output: html_document
 runtime: shiny
