@@ -1,0 +1,127 @@
+---
+title: "CommunicationTiming"
+author: "hollen"
+date: "February 22, 2018"
+output: html_document
+runtime: shiny
+params:
+  xmitFilename: "./AWRT_Transmit_PacketDissections_ManyTests.csv"
+  recvFilename: "./AWRT_Receive_PacketDissections_ManyTests.csv"
+  maxXmitTime: 102
+  xmitPlotMinX: 99
+  xmitPlotMaxX: 101
+  respPlotMinX: 0.35
+  respPlotMaxX: 0.91
+---
+
+**OVERVIEW**
+
+  I want a way to analyze the timing of Wireshark collected data for a specific network
+  command between a device and its driver.  In the example here I'm evaluating the
+  AWRT response from a device.  I collected the data with Wireshark through a testing
+  sequence and I want to export the packet dissections from the command transmissions
+  and receptions so that I can:
+
+    1. Evaluate the timing between the transmitted request for new data with with AWRT K0 command
+    2. Evaluate the response time of the device between the perception of the transmitted AWRT K0
+       commad and the receipt of the online data from the device
+
+**PREREQUISITES**
+
+    1. Using packet dissections from WireShark version 2.2.6 (but I don't expect change from different verions)
+    2. Column names in the packet dissections are expected to be: {
+         "No.",
+         "Time",
+         "Source",
+         "Destination",
+         "Protocol",
+         "Length",
+         "Info"}
+    3. I have filtered the packets to provide packet dissections for the transmitted and received commands as:
+         Transmission of "AWRT K0" using "data.data contains 02:20:41:57:52:54:20:4B"
+         Reception of "AWRT e" using "data.data contains 02:20:41:57:52:54:20:30" (expecting error to be zero (0))
+
+
+```{r xmit_recv_Packets, include=FALSE, cached=FALSE, error=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+xmitPackets <- read.csv(file = params$xmitFilename)
+recvPackets <- read.csv(file = params$recvFilename)
+```
+
+Now clean up the data so that they can be joined. I've assumed that each transmit line will match
+to a subsequent response line, so I plan to join the data based on that online 'transaction.'
+
+With this resulting table I can calculate the time different (deltaT) between the transmitted
+command and the response from the device.
+
+```{r clean_and_tidy, echo=FALSE, cached=FALSE, error=FALSE, warning=FALSE}
+library(dplyr)
+
+xmitData <- xmitPackets %>%
+  mutate(PacketNo = row_number(), XmitTimeMs = Time * 1000) %>%
+  rename(XmitSeqNo = 'No.') %>%
+  select(PacketNo, XmitSeqNo, XmitTimeMs)
+
+recvData <- recvPackets %>%
+  mutate(PacketNo = row_number(), RecvTimeMs = Time * 1000) %>%
+  rename(RecvSeqNo = 'No.') %>%
+  select(PacketNo, RecvSeqNo, RecvTimeMs)
+
+transactionData <- xmitData %>%
+  inner_join(recvData, by = 'PacketNo') %>%
+  mutate(deltaTms = RecvTimeMs - XmitTimeMs) %>%
+  select(PacketNo, XmitSeqNo, RecvSeqNo, XmitTimeMs, RecvTimeMs, deltaTms)
+
+transmitDeltaT <- tail(xmitData, -1) - head(xmitData, -1)
+
+transmitDeltaT <- transmitDeltaT %>%
+  filter(XmitTimeMs <= 200)
+```
+
+I first needed to know how reliable the requests for online data were to the device.  I collected `r transmitDeltaT %>% count()` measurements and found only `r transmitDeltaT %>% filter(XmitTimeMs > params$maxXmitTime) %>% count()` were greater than `r params$maxXmitTime` milliseconds.  Here are the summary results for all measurements that were less than or equal to `r params$maxXmitTime` milliseconds:
+
+```{r transmitDeltaT_Summary, echo=FALSE, cache=FALSE, comment=""}
+transmitDeltaT %>% filter(XmitTimeMs <= params$maxXmitTime) %>% select(-PacketNo, -XmitSeqNo) %>% summary()
+```
+
+Here is the distribution of the measurement data that I collected and analyzed for time between online requests:
+
+```{r transmitDeltaT_plot, echo=FALSE, cached=FALSE}
+library(ggplot2)
+
+transmitDeltaT %>%
+  ggplot(aes(x=XmitTimeMs, fill = cut(XmitTimeMs, 2000))) +
+  geom_histogram(binwidth = 0.1, show.legend = FALSE) +
+  coord_cartesian(xlim = c(params$xmitPlotMinX, params$xmitPlotMaxX)) +
+  labs(x = '[milliseconds]',
+       y = '',
+       title = 'Time Measurements Between Online Requests within the Device Driver') +
+  theme_dark()
+
+```
+
+I also wanted to know how responsive the device was to the request of the online command.  I collected `r count(transactionData)` measurements and found only `r transactionData %>% filter(deltaTms > 2.0) %>% select(deltaTms) %>% arrange(desc(deltaTms)) %>% count()` that were larger than 2.0 milliseconds!  Here are the summary results for all measurements that were collected:
+
+```{r onlineResponseTimes_Summary, echo=FALSE, cache=FALSE, comment=""}
+onlineResponseTimes <- transactionData %>%
+  select(PacketNo, deltaTms) %>%
+  filter(deltaTms <= 1000)
+
+onlineResponseTimes %>% select(-PacketNo) %>% summary()
+```
+
+Here is the distribution of the measurement data that I collected and analyzed for the online response times:
+
+```{r onlineResponseResults, echo=FALSE, cached=FALSE}
+onlineResponseTimes %>%
+  ggplot(aes(x=deltaTms, fill = cut(deltaTms,2000))) +
+  geom_histogram(binwidth = 0.01, show.legend = FALSE) +
+  coord_cartesian(xlim = c(params$respPlotMinX, params$respPlotMaxX)) +
+  labs(x = '[milliseconds]',
+       y = '',
+       title = 'Response Time Measurements for Online Request',
+       subtitle = 'Measurement of time between the request for and receipt of data from the device.') +
+  theme_dark()
+```
+
