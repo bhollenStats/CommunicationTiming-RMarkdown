@@ -10,8 +10,10 @@ params:
   maxXmitTime: 102
   xmitPlotMinX: 99
   xmitPlotMaxX: 101
+  xmitBinWidth: 0.01
   respPlotMinX: 0.35
   respPlotMaxX: 0.91
+  respBinWidth: 0.01
 ---
 
 **OVERVIEW**
@@ -41,9 +43,12 @@ params:
          Transmission of "AWRT K0" using "data.data contains 02:20:41:57:52:54:20:4B"
          Reception of "AWRT e" using "data.data contains 02:20:41:57:52:54:20:30" (expecting error to be zero (0))
 
+**INPUT BEING ANALYZED**
+
+  The transmit result file is `r params$xmitFilename` and the receive result file is `r params$recvFilename`
 
 ```{r xmit_recv_Packets, include=FALSE, cached=FALSE, error=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
 
 xmitPackets <- read.csv(file = params$xmitFilename)
 recvPackets <- read.csv(file = params$recvFilename)
@@ -91,8 +96,8 @@ Here is the distribution of the measurement data that I collected and analyzed f
 library(ggplot2)
 
 transmitDeltaT %>%
-  ggplot(aes(x=XmitTimeMs, fill = cut(XmitTimeMs, 2000))) +
-  geom_histogram(binwidth = 0.1, show.legend = FALSE) +
+  ggplot(aes(x=XmitTimeMs)) +
+  geom_histogram(binwidth = params$xmitBinWidth, show.legend = FALSE, color='darkgreen', fill='green') +
   coord_cartesian(xlim = c(params$xmitPlotMinX, params$xmitPlotMaxX)) +
   labs(x = '[milliseconds]',
        y = '',
@@ -101,7 +106,7 @@ transmitDeltaT %>%
 
 ```
 
-I also wanted to know how responsive the device was to the request of the online command.  I collected `r count(transactionData)` measurements and found only `r transactionData %>% filter(deltaTms > 2.0) %>% select(deltaTms) %>% arrange(desc(deltaTms)) %>% count()` that were larger than 2.0 milliseconds!  Here are the summary results for all measurements that were collected:
+I also wanted to know how responsive the device was to the request of the online command.  I collected `r count(transactionData)` measurements and found only `r transactionData %>% filter(deltaTms > 20) %>% select(deltaTms) %>% arrange(desc(deltaTms)) %>% count()` that were larger than 20 milliseconds!  Here are the summary results for all measurements that were collected:
 
 ```{r onlineResponseTimes_Summary, echo=FALSE, cache=FALSE, comment=""}
 onlineResponseTimes <- transactionData %>%
@@ -115,8 +120,8 @@ Here is the distribution of the measurement data that I collected and analyzed f
 
 ```{r onlineResponseResults, echo=FALSE, cached=FALSE}
 onlineResponseTimes %>%
-  ggplot(aes(x=deltaTms, fill = cut(deltaTms,2000))) +
-  geom_histogram(binwidth = 0.01, show.legend = FALSE) +
+  ggplot(aes(x=deltaTms)) +
+  geom_histogram(binwidth = params$respBinWidth, show.legend = FALSE, fill='green', color='darkgreen') +
   coord_cartesian(xlim = c(params$respPlotMinX, params$respPlotMaxX)) +
   labs(x = '[milliseconds]',
        y = '',
