@@ -2,8 +2,10 @@
 title: "CommunicationTiming"
 author: "bhollenStats"
 date: "February 22, 2018"
-output: html_document
-runtime: shiny
+output: 
+  pdf_document:
+    toc: true
+    toc_depth: 2
 params:
   xmitFilename: "./data/20200226_CVS_AZMW_Xmit.csv"
   recvFilename: "./data/20200226_CVS_AZMW_Recv.csv"
