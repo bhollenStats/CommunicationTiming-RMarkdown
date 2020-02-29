@@ -5,15 +5,19 @@ date: "February 22, 2018"
 output: html_document
 runtime: shiny
 params:
-  xmitFilename: "./AWRT_Transmit_PacketDissections_ManyTests.csv"
-  recvFilename: "./AWRT_Receive_PacketDissections_ManyTests.csv"
-  maxXmitTime: 102
-  xmitPlotMinX: 99
-  xmitPlotMaxX: 101
+  xmitFilename: "./data/20200226_CVS_AZMW_Xmit.csv"
+  recvFilename: "./data/20200226_CVS_AZMW_Recv.csv"
+  maxXmitTime: 500
+  xmitPlotMinX: 99.75
+  xmitPlotMaxX: 100.25
   xmitBinWidth: 0.01
   respPlotMinX: 0.35
   respPlotMaxX: 0.91
   respBinWidth: 0.01
+  maxDeltaT: 200
+  minDeltaT: 0.01
+  maxRecvT: 100
+  minRecvT: 0
 ---
 
 **OVERVIEW**
@@ -75,19 +79,23 @@ recvData <- recvPackets %>%
 
 transactionData <- xmitData %>%
   inner_join(recvData, by = 'PacketNo') %>%
-  mutate(deltaTms = RecvTimeMs - XmitTimeMs) %>%
-  select(PacketNo, XmitSeqNo, RecvSeqNo, XmitTimeMs, RecvTimeMs, deltaTms)
+  mutate(recvDeltaTms = RecvTimeMs - XmitTimeMs) %>%
+  mutate(xmitDeltaTms = XmitTimeMs - lag(XmitTimeMs, default=XmitTimeMs[1])) %>%
+  select(PacketNo, XmitSeqNo, RecvSeqNo, XmitTimeMs, RecvTimeMs, recvDeltaTms, xmitDeltaTms)
 
-transmitDeltaT <- tail(xmitData, -1) - head(xmitData, -1)
+head(transactionData)
 
-transmitDeltaT <- transmitDeltaT %>%
-  filter(XmitTimeMs <= 200)
 ```
 
-I first needed to know how reliable the requests for online data were to the device.  I collected `r transmitDeltaT %>% count()` measurements and found only `r transmitDeltaT %>% filter(XmitTimeMs > params$maxXmitTime) %>% count()` were greater than `r params$maxXmitTime` milliseconds.  Here are the summary results for all measurements that were less than or equal to `r params$maxXmitTime` milliseconds:
+I first needed to know how reliable the requests for online data were to the device.  I collected `r transactionData %>% count()` measurements and found only `r transactionData %>% filter(xmitDeltaTms > params$maxXmitTime) %>% count()` were greater than `r params$maxXmitTime` milliseconds.  Here are the summary results for all measurements that were less than or equal to `r params$maxXmitTime` milliseconds:
 
 ```{r transmitDeltaT_Summary, echo=FALSE, cache=FALSE, comment=""}
-transmitDeltaT %>% filter(XmitTimeMs <= params$maxXmitTime) %>% select(-PacketNo, -XmitSeqNo) %>% summary()
+justDeltaT <- transactionData %>%
+  filter(xmitDeltaTms <= params$maxDeltaT) %>% 
+  filter(xmitDeltaTms >= params$minDeltaT) %>%
+  select(xmitDeltaTms)
+justDeltaT %>%
+  summary()
 ```
 
 Here is the distribution of the measurement data that I collected and analyzed for time between online requests:
@@ -95,8 +103,8 @@ Here is the distribution of the measurement data that I collected and analyzed f
 ```{r transmitDeltaT_plot, echo=FALSE, cached=FALSE}
 library(ggplot2)
 
-transmitDeltaT %>%
-  ggplot(aes(x=XmitTimeMs)) +
+justDeltaT %>%
+  ggplot(aes(x=xmitDeltaTms)) +
   geom_histogram(binwidth = params$xmitBinWidth, show.legend = FALSE, color='darkgreen', fill='green') +
   coord_cartesian(xlim = c(params$xmitPlotMinX, params$xmitPlotMaxX)) +
   labs(x = '[milliseconds]',
@@ -106,23 +114,29 @@ transmitDeltaT %>%
 
 ```
 
-I also wanted to know how responsive the device was to the request of the online command.  I collected `r count(transactionData)` measurements and found only `r transactionData %>% filter(deltaTms > 20) %>% select(deltaTms) %>% arrange(desc(deltaTms)) %>% count()` that were larger than 20 milliseconds!  Here are the summary results for all measurements that were collected:
+I also wanted to know how responsive the device was to the request of the online command.  I collected `r count(transactionData)` measurements and found only `r transactionData %>% filter(recvDeltaTms > 20) %>% select(recvDeltaTms) %>% arrange(desc(recvDeltaTms)) %>% count()` that were larger than 20 milliseconds!  Here are the summary results for all measurements that were collected:
 
 ```{r onlineResponseTimes_Summary, echo=FALSE, cache=FALSE, comment=""}
 onlineResponseTimes <- transactionData %>%
-  select(PacketNo, deltaTms) %>%
-  filter(deltaTms <= 1000)
+  filter(recvDeltaTms <= params$maxRecvT) %>% 
+  filter(recvDeltaTms >= params$minRecvT) %>%
+  select(recvDeltaTms)
 
-onlineResponseTimes %>% select(-PacketNo) %>% summary()
+onlineResponseTimes %>% summary()
 ```
 
 Here is the distribution of the measurement data that I collected and analyzed for the online response times:
 
 ```{r onlineResponseResults, echo=FALSE, cached=FALSE}
+temp <- fivenum(onlineResponseTimes$recvDeltaTms)
+minX <- (0.5*(temp[2]-temp[1]))
+maxX <- temp[4]+(0.5*(temp[5]-temp[4]))
+maxX <- 2.5
+
 onlineResponseTimes %>%
-  ggplot(aes(x=deltaTms)) +
+  ggplot(aes(x=recvDeltaTms)) +
   geom_histogram(binwidth = params$respBinWidth, show.legend = FALSE, fill='green', color='darkgreen') +
-  coord_cartesian(xlim = c(params$respPlotMinX, params$respPlotMaxX)) +
+  coord_cartesian(xlim = c(minX, maxX)) +
   labs(x = '[milliseconds]',
        y = '',
        title = 'Response Time Measurements for Online Request',
